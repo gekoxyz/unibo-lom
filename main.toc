@@ -1,0 +1,5 @@
+\contentsline {section}{\numberline {1}Introduzione}{1}{section.1}%
+\contentsline {section}{\numberline {2}Materiali utilizzati}{1}{section.2}%
+\contentsline {section}{\numberline {3}Software utilizzati}{3}{section.3}%
+\contentsline {section}{\numberline {4}Progettaizone e realizzazione slider in legno}{3}{section.4}%
+\contentsline {section}{\numberline {5}Progettazione e realizzazione circuito e software}{7}{section.5}%
