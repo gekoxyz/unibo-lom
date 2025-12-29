@@ -1,9 +1,11 @@
+#include <Adafruit_GFX.h>     // Core graphics library
+#include <Adafruit_ST7735.h>  // display-specific library
 #include <SPI.h>
-#include <Adafruit_GFX.h>    // Core graphics library
-#include <Adafruit_ST7735.h> // Hardware-specific library
+#include <EEPROM.h>
 
 const unsigned long COIN_COOLDOWN_MS = 150;
 const int NUM_COIN_TYPES = 5;
+const int BUZZER = 7;
 
 struct Coin {
   const char* name;
@@ -15,231 +17,435 @@ struct Coin {
 };
 
 Coin coins[NUM_COIN_TYPES] = {
-  {"10 cent", 6, 0.10, 0, HIGH, 0},
-  {"20 cent", 5, 0.20, 0, HIGH, 0},
-  {"50 cent", 3, 0.50, 0, HIGH, 0},
-  {"1 euro", 4, 1.00, 0, HIGH, 0},
-  {"2 euro", 2, 2.00, 0, HIGH, 0},
+    {"10 cent", 6, 0.10, 0, HIGH, 0},
+    {"20 cent", 5, 0.20, 0, HIGH, 0},
+    {"50 cent", 3, 0.50, 0, HIGH, 0},
+    {"1 euro", 4, 1.00, 0, HIGH, 0},
+    {"2 euro", 2, 2.00, 0, HIGH, 0},
 };
 
-// display 
+// display
 const int TFT_CS = 10;
 const int TFT_RST = 8;
 const int TFT_DC = 9;
 
 // encoder
-const int CLK_PIN = A1;  // The "Clock" pin
-const int DT_PIN  = A2;  // The "Data" pin
-const int SW_PIN  = A3;  // The "Switch" (button) pin
-float encoder_counter = 0.0;
+const int CLK_PIN = A1;  // clock
+const int DT_PIN = A2;   // data
+const int SW_PIN = A3;   // switch
+int encoder_counter = 0;
 int last_encoder_clock_state;
+int coin_index_for_removal = 0;
 
-const unsigned long ENCODER_BUTTON_DEBOUNCE_MS = 150;
-const unsigned long ENCODER_ROTATION_DEBOUNCE_MS = 10;
+const unsigned long ENCODER_ROTATION_DEBOUNCE_MS = 1;
+const unsigned long ENCODER_BUTTON_DEBOUNCE_MS = 25;
+const unsigned long DOUBLE_CLICK_WINDOW_MS = 350;
+const unsigned long LONG_PRESS_DURATION_MS = 4000; // 4 seconds for reset
 
+const int DISPLAY_X_OFFSET = 6;
+
+int coins_to_remove = 0;
 int sensors_locked = LOW;
+int sensors_locked_submenu = LOW;
+bool display_needs_update = true;
+
+// audio feedback
+unsigned long buzzer_timer = 0;
+int buzzer_state = 0; // 0=Idle, 1=First Tone, 2=Second Tone
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
-void check_coin_sensor(Coin &coin, unsigned long current_time);
-float getTotal();
+enum ClickType {
+  NO_CLICK,
+  SINGLE_CLICK,
+  DOUBLE_CLICK,
+  LONG_PRESS
+};
 
 void setup() {
-  // coin counter initialization
-  Serial.begin(9600);
+  Serial.begin(19200);
   while (!Serial);
+  Serial.println("------------------------------------");
   Serial.println("IR sensor coin counter | initialized");
   Serial.println("------------------------------------");
   for (int i = 0; i < NUM_COIN_TYPES; i++) pinMode(coins[i].pin, INPUT_PULLUP);
 
-  // display initialization
+  load_coin_count();
+
   tft.initR(INITR_144GREENTAB);
   tft.setRotation(0);
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
   tft.setTextSize(1);
 
-  // encoder
   pinMode(CLK_PIN, INPUT_PULLUP);
   pinMode(DT_PIN, INPUT_PULLUP);
   pinMode(SW_PIN, INPUT_PULLUP);
+  pinMode(BUZZER, OUTPUT);
   last_encoder_clock_state = digitalRead(CLK_PIN);
 }
 
 void loop() {
   unsigned long current_time = millis();
 
-  handleEncoderButton();
+  ClickType button_event = checkEncoderButton();
+
+  update_coin_feedback();
+  
+  switch (button_event) {
+    case LONG_PRESS:
+      // Reset all coin counts
+      reset_all_coins();
+      Serial.println("LONG PRESS DETECTED - ALL COINS RESET!");
+      tft.fillScreen(ST77XX_BLACK);
+      display_needs_update = true;
+      trigger_reset_feedback();
+      break;
+    case DOUBLE_CLICK:
+      sensors_locked = !sensors_locked;
+      if (sensors_locked) {
+        Serial.println("Sensors LOCKED. Entering adjustment mode.");
+        tft.fillScreen(ST77XX_BLACK);
+      } else {
+        Serial.println("Sensors UNLOCKED. Exiting adjustment mode.");
+        tft.fillScreen(ST77XX_BLACK);
+      }
+      display_needs_update = true;
+      break;
+    case SINGLE_CLICK:
+      if (sensors_locked) {
+        if (!sensors_locked_submenu) {
+          // ENTERING SUBMENU
+          sensors_locked_submenu = true;
+          coins_to_remove = 0;  // Reset counter when entering
+          Serial.print("GO TO SUBMENU OF CURRENT COIN");
+          tft.fillScreen(ST77XX_BLACK);
+        } else {
+          // EXITING SUBMENU (CONFIRM REMOVAL)
+          sensors_locked_submenu = false;
+
+          // Apply the removal
+          if (coins_to_remove > 0) {
+            coins[encoder_counter].count -= coins_to_remove;
+            save_coin_count(encoder_counter);
+            Serial.print("Removed ");
+            Serial.print(coins_to_remove);
+            Serial.println(" coins.");
+          }
+          Serial.print("EXIT FROM SUBMENU");
+          tft.fillScreen(ST77XX_BLACK);
+        }
+        display_needs_update = true;
+      }
+      break;
+    case NO_CLICK:
+    default:
+      break;
+  }
 
   if (!sensors_locked) {
-    for (int i = 0; i < NUM_COIN_TYPES; i++) check_coin_sensor(coins[i], current_time);
+    // check for passing coins
+    for (int i = 0; i < NUM_COIN_TYPES; i++) check_coin_sensor(i, current_time);
   } else {
+    // handle the encoder rotation to manage the removal submenu
     handleEncoderRotation();
   }
+
   updateDisplay();
 }
 
-void handleEncoderButton() {
+ClickType checkEncoderButton() {
+  static int last_stable_state = HIGH;
+  static int last_flicker_state = HIGH;
   static unsigned long last_debounce_time = 0;
-  static int last_button_state = HIGH;
+  static int click_count = 0;
+  static unsigned long last_press_time = 0;
+  static unsigned long button_press_start = 0;
+  static bool long_press_triggered = false;
   
-  int current_button_state = digitalRead(SW_PIN);
-
-  // Check for a falling edge (button press)
-  if (last_button_state == HIGH && current_button_state == LOW) {
-    if (millis() - last_debounce_time > ENCODER_BUTTON_DEBOUNCE_MS) {
-      // Toggle the state
-      sensors_locked = !sensors_locked;
-      last_debounce_time = millis();
-      if (sensors_locked) {
-        Serial.println("Sensors LOCKED. Entering adjustment mode.");
-        encoder_counter = 0.0;
+  int current_flicker_state = digitalRead(SW_PIN);
+  unsigned long current_time = millis();
+  
+  if (current_flicker_state != last_flicker_state) {
+    last_debounce_time = current_time;
+  }
+  last_flicker_state = current_flicker_state;
+  
+  if ((current_time - last_debounce_time) > ENCODER_BUTTON_DEBOUNCE_MS) {
+    if (current_flicker_state != last_stable_state) {
+      last_stable_state = current_flicker_state;
+      
+      if (last_stable_state == LOW) {
+        // Button pressed down
+        button_press_start = current_time;
+        long_press_triggered = false;
+        click_count++;
+        
+        if (click_count == 1) {
+          last_press_time = current_time;
+        } else if (click_count == 2) {
+          if ((current_time - last_press_time) < DOUBLE_CLICK_WINDOW_MS) {
+            Serial.println("DETECTED DOUBLE CLICK");
+            click_count = 0;
+            return DOUBLE_CLICK;
+          } else {
+            click_count = 1;
+            last_press_time = current_time;
+          }
+        }
       } else {
-        Serial.println("Sensors UNLOCKED. Exiting adjustment mode.");
-        applyRemoval(encoder_counter);
-        encoder_counter = 0.0;
+        // Button released
+        long_press_triggered = false;
       }
     }
   }
-  last_button_state = current_button_state;
-}
-
-void applyRemoval(float amount_to_remove) {
-  int target_amount_cents = round(amount_to_remove * 100);
-  int remaining_to_remove_cents = target_amount_cents;
-  if (remaining_to_remove_cents <= 0) {
-    Serial.println("Nothing to remove!");
-    return;
-  }
-  Serial.println("Attempting to remove: ");
-  Serial.print(amount_to_remove, 2);
-  Serial.println(" EUR")
-
-  for (int i = NUM_COIN_TYPES - 1; i >= 0; i--) {
-    Coin &coin = coins[i];
-    int coin_value_cents = round(coin.value * 100);
-    if (coin_value_cents <= 0) continue;
-    int num_possible_from_value = remaining_to_remove_cents / coin_value_cents;
-    int num_available = coin.count;
-    // take the minimum amount of coins to ensure we don't remove more than we have or more 
-    // than needed for the target amount
-    int num_to_remove = min(num_possible_from_value, num_available);
-
-    if (num_to_remove > 0) {
-      coin.count -= num_to_remove;
-      remaining_to_remove_cents -= (num_to_remove * coin_value_cents);
-      Serial.print("Removed ");
-      Serial.print(num_to_remove);
-      Serial.print("x");
-      Serial.print(coin.name);
-      Serial.println("");
+  
+  // Check for long press while button is held
+  if (last_stable_state == LOW && !long_press_triggered) {
+    if ((current_time - button_press_start) >= LONG_PRESS_DURATION_MS) {
+      long_press_triggered = true;
+      click_count = 0;
+      Serial.println("DETECTED LONG PRESS");
+      return LONG_PRESS;
     }
-    if (remaining_to_remove_cents <= 0) break;
   }
-
-  if (remaining_to_remove_cents > 0) {
-    Serial.println("[WARNING] Could not remove the full amount. Coins left: ")
-    Serial.print((float)remaining_to_remove_cents/100.0, 2);
-    Serial.println(" EUR")
-  } else {
-    Serial.println("Removal successful!");
+  
+  // Check for single click timeout
+  if (click_count == 1 && (current_time - last_press_time) > DOUBLE_CLICK_WINDOW_MS) {
+    Serial.println("DETECTED SINGLE CLICK");
+    click_count = 0;
+    return SINGLE_CLICK;
   }
-  Serial.print("New Total: ");
-  Serial.println(getTotal(), 2);
+  
+  return NO_CLICK;
 }
 
-/**
- * @brief Reads the encoder rotation. Called only when in the "locked" state.
- */
 void handleEncoderRotation() {
   static unsigned long last_rotation_time = 0;
-  
   int current_clk_state = digitalRead(CLK_PIN);
-
   if (current_clk_state != last_encoder_clock_state) {
     if (millis() - last_rotation_time > ENCODER_ROTATION_DEBOUNCE_MS) {
       if (current_clk_state == LOW) {
-        if (digitalRead(DT_PIN) == current_clk_state) {
-          encoder_counter += 0.1; // Clockwise
+        bool direction_up = (digitalRead(DT_PIN) == current_clk_state);
+
+        if (sensors_locked_submenu) {
+          // choosing amount to remove (Bounded 0 to Coin Count)
+          int max_removable = coins[encoder_counter].count;
+
+          if (direction_up) {
+            if (coins_to_remove < max_removable) {
+              coins_to_remove++;
+            }
+          } else {
+            if (coins_to_remove > 0) {
+              coins_to_remove--;
+            }
+          }
+
         } else {
-          encoder_counter = max(0.0, encoder_counter - 0.1)
+          // choosing coin type (Bounded 0 to 4 with Wrap/Mod)
+          if (direction_up) {
+            encoder_counter++;
+            encoder_counter = encoder_counter % NUM_COIN_TYPES;
+          } else {
+            encoder_counter--;
+            if (encoder_counter < 0) {
+              encoder_counter = NUM_COIN_TYPES - 1;
+            }
+          }
         }
-        
-        Serial.print("Adjustment value: ");
-        Serial.println(encoder_counter, 2);
-      } 
+
+        display_needs_update = true;
+      }
       last_rotation_time = millis();
     }
   }
   last_encoder_clock_state = current_clk_state;
 }
 
-
-/**
- * @brief Updates the TFT display based on the current system state.
- * This function uses a simple timer to avoid flickering.
- */
 void updateDisplay() {
-  static unsigned long last_display_update = 0;
-  const unsigned long DISPLAY_UPDATE_INTERVAL_MS = 200;
-
-  if (millis() - last_display_update > DISPLAY_UPDATE_INTERVAL_MS) {
+  if (display_needs_update) {
     tft.setTextSize(1);
-    
+    int cursor_y_coord = 8;
+    tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+
     if (!sensors_locked) {
-      // --- UNLOCKED DISPLAY ---
-      tft.setCursor(2, 2);
-      tft.print("Total: ");
-      tft.print(getTotal(), 2);
-      tft.print(" EUR  "); // Padding to clear old text
-
-      tft.setCursor(2, 11);
-      tft.print("SENSORI SBLOCCATI");
-
-      // Clear the adjustment line
-      tft.fillRect(0, 20, tft.width(), 10, ST77XX_BLACK);
-      
+      tft.print("#    Monete");
+      cursor_y_coord += 10;
+      tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+      tft.print("--------------------");
+      cursor_y_coord += 10;
+      tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+      for (int i = 0; i < NUM_COIN_TYPES; i++) {
+        tft.print(coins[i].count);
+        tft.print("    ");
+        tft.print(coins[i].name);
+        cursor_y_coord += 10;
+        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+      }
+      tft.setTextSize(2);
+      cursor_y_coord += 6;
+      tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+      tft.print("Tot: ");
+      tft.print(get_total(), 2);
+      tft.setTextSize(1);
     } else {
-      // --- LOCKED DISPLAY ---
-      tft.setCursor(2, 2);
-      tft.print("Total: ");
-      tft.print(getTotal(), 2);
-      tft.print(" EUR  ");
+      if (sensors_locked_submenu) {
+        tft.print(" MODALITA RIMOZIONE");
+        cursor_y_coord += 10;
+        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+        tft.print("--------------------");
+        cursor_y_coord += 10;
+        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
 
-      tft.setCursor(2, 11);
-      tft.print("SENSORI BLOCCATI "); // Padding
-      
-      tft.setCursor(2, 20);
-      tft.print("Rimuovi: ");
-      tft.print(encoder_counter, 2);
-      tft.print(" EUR  ");
+        // SENSORS LOCKED IN SUBMENU -> MANAGE COIN TO REMOVE
+        tft.print("Rimozione di ");
+        tft.print(coins[encoder_counter].name);
+
+        cursor_y_coord += 10;
+        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+        tft.print("Disponibili: ");
+        tft.print(coins[encoder_counter].count);
+        
+        // remove ghost text
+        cursor_y_coord += 10;
+        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+        tft.print("                 ");
+
+        cursor_y_coord += 10;
+        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+        tft.print("Stai rimuovendo: ");
+
+        // remove ghost text
+        cursor_y_coord += 10;
+        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+        tft.print("                 ");
+
+        tft.print(coins_to_remove);
+
+      } else {
+        tft.print(" MODALITA RIMOZIONE");
+        cursor_y_coord += 10;
+        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+        tft.print("--------------------");
+        cursor_y_coord += 10;
+        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+
+        // SENSORS LOCKED NOT IN SUBMENU -> SELECTING COIN TO REMOVE
+        for (int i = 0; i < NUM_COIN_TYPES; i++) {
+          // if current coin is selected then print >
+          if (encoder_counter == i) {
+            tft.print("> ");
+          } else {
+            tft.print("  ");
+          }
+          tft.print(coins[i].count);
+          tft.print("  ");
+          tft.print(coins[i].name);
+          cursor_y_coord += 10;
+          tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+        }
+      }
     }
-    last_display_update = millis();
+    display_needs_update = false;
   }
 }
 
-/**
-  * Check a coin sensor for coins passing by
-  */
-void check_coin_sensor(Coin &coin, unsigned long current_time) {
+void check_coin_sensor(int coin_index, unsigned long current_time) {
+  Coin& coin = coins[coin_index];
   int current_state = digitalRead(coin.pin);
   if (coin.prev_state == HIGH && current_state == LOW) {
     if (current_time - coin.last_detection_time > COIN_COOLDOWN_MS) {
       coin.count++;
+      save_coin_count(coin_index);
       coin.last_detection_time = current_time;
+      trigger_coin_feedback();
       Serial.print(coin.name);
       Serial.print(" coin detected! | Total: ");
-      Serial.println(getTotal(), 2); // Print total with 2 decimal places
+      Serial.println(get_total(), 2);
+      display_needs_update = true;
     }
   }
   coin.prev_state = current_state;
 }
 
-/**
-  * Calculate the total amount of coins that the user has
-  */
-float getTotal() {
+float get_total() {
   float totalValue = 0.0;
   for (int i = 0; i < NUM_COIN_TYPES; i++) totalValue += (coins[i].count * coins[i].value);
   return totalValue;
+}
+
+// Call this function when a coin is detected
+void trigger_coin_feedback() {
+  buzzer_state = 1;           // Set state to First Tone
+  buzzer_timer = millis();    // Reset timer
+  tone(BUZZER, 3000);         // Start the first sound immediately
+}
+
+void update_coin_feedback() {
+  if (buzzer_state == 0) return; // Do nothing if idle
+
+  unsigned long current_time = millis();
+
+  // State 1: Playing 3000Hz for 65ms
+  if (buzzer_state == 1) {
+    if (current_time - buzzer_timer >= 65) {
+      buzzer_state = 2;       // Move to next state
+      buzzer_timer = current_time;
+      tone(BUZZER, 2000);     // Switch to second tone
+    }
+  }
+  // State 2: Playing 2000Hz for 25ms
+  else if (buzzer_state == 2) {
+    if (current_time - buzzer_timer >= 25) {
+      buzzer_state = 0;       // Reset to Idle
+      noTone(BUZZER);         // Turn off sound
+    }
+  }
+}
+
+// Reset all coin counts to zero
+void reset_all_coins() {
+  for (int i = 0; i < NUM_COIN_TYPES; i++) {
+    coins[i].count = 0;
+    save_coin_count(i);
+  }
+  Serial.println("All coin counts have been reset to 0.");
+}
+
+// Audio feedback for reset operation
+void trigger_reset_feedback() {
+  // Three descending tones to indicate reset
+  tone(BUZZER, 2500, 150);
+  delay(150);
+  tone(BUZZER, 2000, 150);
+  delay(150);
+  tone(BUZZER, 1500, 150);
+}
+
+void load_coin_count() {
+  int address = 0;
+  for (int i = 0; i < NUM_COIN_TYPES; i++) {
+    int storedValue;
+    EEPROM.get(address, storedValue);
+    
+    // Check if the value is valid. 
+    // In a fresh Arduino, EEPROM is usually all 1s (-1 as signed int).
+    // If it's negative, we assume it's fresh/invalid and set to 0.
+    if (storedValue < 0) {
+      coins[i].count = 0;
+    } else {
+      coins[i].count = storedValue;
+    }
+    
+    address += sizeof(int); // Move address forward by size of an integer
+  }
+  Serial.println("Coin counts loaded from EEPROM.");
+}
+
+void save_coin_count(int index) {
+  int address = index * sizeof(int);
+  EEPROM.put(address, coins[index].count);
+  // Note: EEPROM.put automatically uses .update(), 
+  // so it won't wear out the memory if the value hasn't actually changed.
 }
