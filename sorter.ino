@@ -1,7 +1,7 @@
-#include <Adafruit_GFX.h>     // Core graphics library
-#include <Adafruit_ST7735.h>  // display-specific library
-#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7735.h>
 #include <EEPROM.h>
+#include <SPI.h>
 
 const unsigned long COIN_COOLDOWN_MS = 150;
 const int NUM_COIN_TYPES = 5;
@@ -17,11 +17,11 @@ struct Coin {
 };
 
 Coin coins[NUM_COIN_TYPES] = {
-    {"10 cent", 6, 0.10, 0, HIGH, 0},
-    {"20 cent", 5, 0.20, 0, HIGH, 0},
-    {"50 cent", 3, 0.50, 0, HIGH, 0},
-    {"1 euro", 4, 1.00, 0, HIGH, 0},
-    {"2 euro", 2, 2.00, 0, HIGH, 0},
+  {"10 cent", 6, 0.10, 0, HIGH, 0},
+  {"20 cent", 5, 0.20, 0, HIGH, 0},
+  {"50 cent", 3, 0.50, 0, HIGH, 0},
+  {"1 euro", 4, 1.00, 0, HIGH, 0},
+  {"2 euro", 2, 2.00, 0, HIGH, 0},
 };
 
 // display
@@ -40,7 +40,7 @@ int coin_index_for_removal = 0;
 const unsigned long ENCODER_ROTATION_DEBOUNCE_MS = 1;
 const unsigned long ENCODER_BUTTON_DEBOUNCE_MS = 25;
 const unsigned long DOUBLE_CLICK_WINDOW_MS = 350;
-const unsigned long LONG_PRESS_DURATION_MS = 4000; // 4 seconds for reset
+const unsigned long LONG_PRESS_DURATION_MS = 4000;  // reset timer
 
 const int DISPLAY_X_OFFSET = 6;
 
@@ -51,7 +51,7 @@ bool display_needs_update = true;
 
 // audio feedback
 unsigned long buzzer_timer = 0;
-int buzzer_state = 0; // 0=Idle, 1=First Tone, 2=Second Tone
+int buzzer_state = 0;  // 0=Idle, 1=First Tone, 2=Second Tone
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
@@ -91,10 +91,10 @@ void loop() {
   ClickType button_event = checkEncoderButton();
 
   update_coin_feedback();
-  
+
   switch (button_event) {
     case LONG_PRESS:
-      // Reset all coin counts
+      // reset all coin counts
       reset_all_coins();
       Serial.println("LONG PRESS DETECTED - ALL COINS RESET!");
       tft.fillScreen(ST77XX_BLACK);
@@ -115,16 +115,16 @@ void loop() {
     case SINGLE_CLICK:
       if (sensors_locked) {
         if (!sensors_locked_submenu) {
-          // ENTERING SUBMENU
+          // entering submenu
           sensors_locked_submenu = true;
-          coins_to_remove = 0;  // Reset counter when entering
+          coins_to_remove = 0;  // reset counter when entering
           Serial.print("GO TO SUBMENU OF CURRENT COIN");
           tft.fillScreen(ST77XX_BLACK);
         } else {
-          // EXITING SUBMENU (CONFIRM REMOVAL)
+          // exiting submenu (confirm removal)
           sensors_locked_submenu = false;
 
-          // Apply the removal
+          // apply the removal
           if (coins_to_remove > 0) {
             coins[encoder_counter].count -= coins_to_remove;
             save_coin_count(encoder_counter);
@@ -144,7 +144,7 @@ void loop() {
   }
 
   if (!sensors_locked) {
-    // check for passing coins
+    // check for coins passing in front of the IR sensor
     for (int i = 0; i < NUM_COIN_TYPES; i++) check_coin_sensor(i, current_time);
   } else {
     // handle the encoder rotation to manage the removal submenu
@@ -162,25 +162,25 @@ ClickType checkEncoderButton() {
   static unsigned long last_press_time = 0;
   static unsigned long button_press_start = 0;
   static bool long_press_triggered = false;
-  
+
   int current_flicker_state = digitalRead(SW_PIN);
   unsigned long current_time = millis();
-  
+
   if (current_flicker_state != last_flicker_state) {
     last_debounce_time = current_time;
   }
   last_flicker_state = current_flicker_state;
-  
+
   if ((current_time - last_debounce_time) > ENCODER_BUTTON_DEBOUNCE_MS) {
     if (current_flicker_state != last_stable_state) {
       last_stable_state = current_flicker_state;
-      
+
       if (last_stable_state == LOW) {
-        // Button pressed down
+        // button pressed down
         button_press_start = current_time;
         long_press_triggered = false;
         click_count++;
-        
+
         if (click_count == 1) {
           last_press_time = current_time;
         } else if (click_count == 2) {
@@ -194,13 +194,13 @@ ClickType checkEncoderButton() {
           }
         }
       } else {
-        // Button released
+        // button released
         long_press_triggered = false;
       }
     }
   }
-  
-  // Check for long press while button is held
+
+  // check for long press while button is held
   if (last_stable_state == LOW && !long_press_triggered) {
     if ((current_time - button_press_start) >= LONG_PRESS_DURATION_MS) {
       long_press_triggered = true;
@@ -209,14 +209,14 @@ ClickType checkEncoderButton() {
       return LONG_PRESS;
     }
   }
-  
-  // Check for single click timeout
+
+  // check for single click timeout
   if (click_count == 1 && (current_time - last_press_time) > DOUBLE_CLICK_WINDOW_MS) {
     Serial.println("DETECTED SINGLE CLICK");
     click_count = 0;
     return SINGLE_CLICK;
   }
-  
+
   return NO_CLICK;
 }
 
@@ -227,11 +227,9 @@ void handleEncoderRotation() {
     if (millis() - last_rotation_time > ENCODER_ROTATION_DEBOUNCE_MS) {
       if (current_clk_state == LOW) {
         bool direction_up = (digitalRead(DT_PIN) == current_clk_state);
-
         if (sensors_locked_submenu) {
-          // choosing amount to remove (Bounded 0 to Coin Count)
+          // choosing amount to remove
           int max_removable = coins[encoder_counter].count;
-
           if (direction_up) {
             if (coins_to_remove < max_removable) {
               coins_to_remove++;
@@ -241,9 +239,8 @@ void handleEncoderRotation() {
               coins_to_remove--;
             }
           }
-
         } else {
-          // choosing coin type (Bounded 0 to 4 with Wrap/Mod)
+          // choosing coin type
           if (direction_up) {
             encoder_counter++;
             encoder_counter = encoder_counter % NUM_COIN_TYPES;
@@ -254,7 +251,6 @@ void handleEncoderRotation() {
             }
           }
         }
-
         display_needs_update = true;
       }
       last_rotation_time = millis();
@@ -290,15 +286,15 @@ void updateDisplay() {
       tft.print(get_total(), 2);
       tft.setTextSize(1);
     } else {
+      tft.print(" MODALITA RIMOZIONE");
+      cursor_y_coord += 10;
+      tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+      tft.print("--------------------");
+      cursor_y_coord += 10;
+      tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
+      
       if (sensors_locked_submenu) {
-        tft.print(" MODALITA RIMOZIONE");
-        cursor_y_coord += 10;
-        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
-        tft.print("--------------------");
-        cursor_y_coord += 10;
-        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
-
-        // SENSORS LOCKED IN SUBMENU -> MANAGE COIN TO REMOVE
+        // sensors locked in submenu -> manage coin to remove
         tft.print("Rimozione di ");
         tft.print(coins[encoder_counter].name);
 
@@ -306,7 +302,7 @@ void updateDisplay() {
         tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
         tft.print("Disponibili: ");
         tft.print(coins[encoder_counter].count);
-        
+
         // remove ghost text
         cursor_y_coord += 10;
         tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
@@ -324,14 +320,7 @@ void updateDisplay() {
         tft.print(coins_to_remove);
 
       } else {
-        tft.print(" MODALITA RIMOZIONE");
-        cursor_y_coord += 10;
-        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
-        tft.print("--------------------");
-        cursor_y_coord += 10;
-        tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
-
-        // SENSORS LOCKED NOT IN SUBMENU -> SELECTING COIN TO REMOVE
+        // sensors locked not in submenu -> selecting coin to remove
         for (int i = 0; i < NUM_COIN_TYPES; i++) {
           // if current coin is selected then print >
           if (encoder_counter == i) {
@@ -375,36 +364,31 @@ float get_total() {
   return totalValue;
 }
 
-// Call this function when a coin is detected
 void trigger_coin_feedback() {
-  buzzer_state = 1;           // Set state to First Tone
-  buzzer_timer = millis();    // Reset timer
-  tone(BUZZER, 3000);         // Start the first sound immediately
+  buzzer_state = 1;
+  buzzer_timer = millis();
+  tone(BUZZER, 3000);
 }
 
 void update_coin_feedback() {
-  if (buzzer_state == 0) return; // Do nothing if idle
+  if (buzzer_state == 0) return;  // idle buzzer
 
   unsigned long current_time = millis();
 
-  // State 1: Playing 3000Hz for 65ms
   if (buzzer_state == 1) {
     if (current_time - buzzer_timer >= 65) {
-      buzzer_state = 2;       // Move to next state
+      buzzer_state = 2;
       buzzer_timer = current_time;
-      tone(BUZZER, 2000);     // Switch to second tone
+      tone(BUZZER, 2000);
     }
-  }
-  // State 2: Playing 2000Hz for 25ms
-  else if (buzzer_state == 2) {
+  } else if (buzzer_state == 2) {
     if (current_time - buzzer_timer >= 25) {
-      buzzer_state = 0;       // Reset to Idle
-      noTone(BUZZER);         // Turn off sound
+      buzzer_state = 0;
+      noTone(BUZZER);
     }
   }
 }
 
-// Reset all coin counts to zero
 void reset_all_coins() {
   for (int i = 0; i < NUM_COIN_TYPES; i++) {
     coins[i].count = 0;
@@ -413,9 +397,7 @@ void reset_all_coins() {
   Serial.println("All coin counts have been reset to 0.");
 }
 
-// Audio feedback for reset operation
 void trigger_reset_feedback() {
-  // Three descending tones to indicate reset
   tone(BUZZER, 2500, 150);
   delay(150);
   tone(BUZZER, 2000, 150);
@@ -428,17 +410,16 @@ void load_coin_count() {
   for (int i = 0; i < NUM_COIN_TYPES; i++) {
     int storedValue;
     EEPROM.get(address, storedValue);
-    
-    // Check if the value is valid. 
-    // In a fresh Arduino, EEPROM is usually all 1s (-1 as signed int).
+
+    // Check if the value is valid.
     // If it's negative, we assume it's fresh/invalid and set to 0.
     if (storedValue < 0) {
       coins[i].count = 0;
     } else {
       coins[i].count = storedValue;
     }
-    
-    address += sizeof(int); // Move address forward by size of an integer
+
+    address += sizeof(int);  // Move address forward by size of an integer
   }
   Serial.println("Coin counts loaded from EEPROM.");
 }
@@ -446,6 +427,4 @@ void load_coin_count() {
 void save_coin_count(int index) {
   int address = index * sizeof(int);
   EEPROM.put(address, coins[index].count);
-  // Note: EEPROM.put automatically uses .update(), 
-  // so it won't wear out the memory if the value hasn't actually changed.
 }

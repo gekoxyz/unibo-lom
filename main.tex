@@ -2,6 +2,10 @@
 
 \usepackage{arxiv}
 
+\usepackage[italian]{babel}
+\usepackage[a4paper,top=2.5cm,bottom=3cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+
 \usepackage[utf8]{inputenc} % allow utf-8 input
 \usepackage[T1]{fontenc}    % use 8-bit T1 fonts
 \usepackage{hyperref}       % hyperlinks
@@ -88,7 +92,8 @@
 \begin{abstract}
 In questo progetto è stato realizzato un contamonete a basso costo, con l'obiettivo di sviluppare un dispositivo funzionale simile a quelli professionali reperibili in commercio, ma a un prezzo notevolmente inferiore.  
 La struttura principale è stata progettata con Fusion360 e realizzata in legno. Per la raccolta delle monete sono stati stampati in 3D cassettini dedicati.  
-Il riconoscimento delle monete è stato implementato mediante sensori a infrarossi collegati a un microcontrollore Arduino Nano.  
+Il riconoscimento delle monete è stato implementato mediante sensori a infrarossi collegati a un microcontrollore Arduino Nano.
+Sono stati usati anche un display, un encoder rotativo e un buzzer per migliorare l'esperienza utente.
 \end{abstract}
 
 
@@ -111,16 +116,19 @@ Per la realizzazione del progetto sono stati usati:
     \item Componenti elettronici
     \begin{itemize}
         \item 1 Arduino Nano
-        \item 5 sensori a infrarossi
-        \item 1 breadboard
+        \item 5 Sensori a infrarossi
+        \item 1 Breadboard
         \item cavetti colorati
+        \item 1 Buzzer
+        \item 1 Encoder rotativo
+        \item 1 Display RGB 128x128
     \end{itemize}
     \item Macchinari e utensili per la lavorazizone del legno
     \begin{itemize}
         \item CNC MasterWood Project 313
         \item Sega circolare da banco
         \item Carta vetrata
-        \item Adesivo vinilico UniCol
+        \item Colla vinilica
     \end{itemize}
     \item Materiali
     \item \begin{itemize}
@@ -145,7 +153,7 @@ Mi sono ispirato a un modellino in cartone che avevo realizzato qualche anno fa,
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\linewidth]{./images/prototipo.png}
-  \caption{}
+  \caption{Prototipo in cartone}
   \label{fig:prototipo}
 \end{figure}
 
@@ -154,7 +162,7 @@ Con Fusion360 ho modellato lo slider, aggiungendo degli accorgimenti rispetto al
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\linewidth]{./images/screen_slider.png}
-  \caption{}
+  \caption{Scrreenshot dello slider in Fusion360}
   \label{fig:screen_slider}
 \end{figure}
 
@@ -163,7 +171,7 @@ Dal modello 3D, dato che ho dovuto tagliare i pezzi di legno per comporre la str
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\linewidth]{./images/tavola_slider.png}
-  \caption{}
+  \caption{Tavola tecnica dello slider}
   \label{fig:tavola_slider}
 \end{figure}
 
@@ -185,7 +193,7 @@ Possiamo vedere questo programma in figura \ref{fig:programma_cnc}
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\linewidth]{./images/programma_cnc.png}
-  \caption{}
+  \caption{Programmazione di macchinario a controllo numerico}
   \label{fig:programma_cnc}
 \end{figure}
 
@@ -194,7 +202,7 @@ Dato che i pezzi sono molto piccoli, per non danneggiare le piastre con le vento
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\linewidth]{./images/mdf_compensato.png}
-  \caption{}
+  \caption{Pannelli di MDF e compensato attaccati con nastro biadesivo}
   \label{fig:mdf_compensato}
 \end{figure}
 
@@ -204,7 +212,7 @@ Dopodichè ho incollato i vari pezzi come da progettazione, utilizzando la colla
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\linewidth]{./images/slider_finito.png}
-  \caption{}
+  \caption{Slider finito}
   \label{fig:slider_finito}
 \end{figure}
 
@@ -220,51 +228,81 @@ Si possono vedere i cassettini finiti in figura \ref{fig:cassettino}
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\linewidth]{./images/cassettino.png}
-  \caption{}
+  \caption{Cassettino stampato in 3D}
   \label{fig:cassettino}
 \end{figure}
 
 \section{Progettazione e realizzazione circuito e software}
 
 La progettazione del circuito elettrico è iniziata con un prototipo, per testare i sensori a infrarossi.
-Dalla pagina del prodotto su AliExpress si può leggere che i sensori possono essere alimentati sia a 5 V che a 3.3 V, e dato che ho visto che a 3.3 V i sensori erano meno sensibili (penso perchè essendo alimentati con meno tensione il sensore emetteva meno raggi a infrarossi, che quindi venivano più difficilmente riflessi, e quindi rilevati) li ho utilizzati direttamente a 5V, senza resistenze di carico nel mezzo.
-Si può vedere il circuito finito in figura \ref{fig:circuito_finito}.
+Dalla pagina del prodotto su AliExpress si può leggere che i sensori possono essere alimentati sia a 5 V che a 3.3 V, e
+dato che ho visto che a 3.3 V i sensori erano meno sensibili li ho utilizzati direttamente a 5V, senza resistenze di carico nel mezzo.
 
+Sono stati aggiunti anche un buzzer, un encoder rotativo e un display per migliorare l'esperienza utente.
+
+% CIRCUITO FINALE
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\linewidth]{./images/circuito_finito.png}
-  \caption{}
+  \caption{Circuito finito}
   \label{fig:circuito_finito}
 \end{figure}
 
-I sensori sono stati collegati sui pin dal \verb|D2| al \verb|D6| nell'Arduino.
-Il software è molto semplice.
-Nel \verb|loop|, a ogni iterazione viene letto il tempo corrente e i valori associati a ogni sensore.
-Dopodichè, una funzione per ogni tipo di moneta rilevabile controlla se la moneta è stata rilevata e se non è in cooldown.
+Il software finito permette di visualizzare tramite il display il quantitativo di monete presente in ciascun cassettino. 
+Con l'encoder rotativo, schiacciando due volte il suo bottone, si può andare in modalità gestione delle monete, che blocca
+i sensori (di modo da poter togliere i cassettini) e permette di selezionare una tipologia di moneta, selezionarla con un
+singolo click e rimuoverla con un altro click. In qualsiasi momento si può tornare alla visualizzazione delle monete
+sbloccando i sensori con un doppio click.
 
-\begin{lstlisting}[language=C++]
-// --- Process 2 Euro Coin Sensor ---
-if (prev_2euro_state == HIGH && current_2euro_state == LOW) {
-    if (current_time - last_2euro_time > COOLDOWN_MS) {
-        counter_2euro++;
-        last_2euro_time = current_time;
-        Serial.print("2 Euro coin detected!   |  Total: ");
-        Serial.println(getTotal(), 2);
-    }
-}
-prev_2euro_state = current_2euro_state;
-\end{lstlisting}
-Questo è necessario perchè durante la caduta una moneta potrebbe, mentre sta ruotando, attivare 2 volte il sensore, e quindi venire conteggiata 2 volte.
-Aggiungendo un cooldown di 150 ms evitiamo che una moneta venga conteggiata 2 volte, ma riuscendo comunque a contare 2 monete dello stesso tipo che cadono in modo consecutivo.
+In ogni momento il dispositivo può essere spento senza perdere il conto della quantità di monete nei cassettini, dato che
+viene salvato il numero di ciascun tipo di moneta nella EEPROM dell'Arduino Nano.
+
+Il conteggio delle monete può anche essere resettato tenendo premuto per 4 secondi il bottone dell'encoder.
+
+Il buzzer viene usato per dare un feedback audio ogni volta che viene conteggiata una moneta, e al reset della quantità
+di monete nel dispositivo.
 
 \vspace{1em}
 
-Possiamo vedere lo slider con i cassettini completato in figura \ref{fig:slider_cassetti_finito}
+Nel software viene usata una \verb|strcut Coin| per gestire i dati. La struttura è formata in questo modo:
+
+\begin{lstlisting}[language=C]
+struct Coin {
+  const char* name;
+  const uint8_t pin;
+  const float value;
+  int count;
+  int prev_state;
+  unsigned long last_detection_time;
+};
+\end{lstlisting}
+
+Questo consente di gestire il controllo dei sensori o la visualizzazione dei dati usando un semplice ciclo for.
+
+Le funzioni più complesse da implementare sono state \verb|checkEncoderButton| e \verb|handleEncoderRotation| che 
+gestiscono il bottone e la rotazione dell'encoder rotativo.
+
+Le funzioni sono complesse perchè devono implementare la logica per gestire il debounce: infatti quando viene premuto il
+bottone o girato l'encoder per via di problematiche meccaniche e di rumore elettrico le transizioni vengono lette
+come input multipli, quindi c'è il bisogno di gestire un periodo di tempo in cui pressioni addizionali vengono ignorate.
+
+Inoltre, \verb|checkEncoderButton| non può immediatamente confermare che ci sia stato un singolo click perchè deve
+aspettare per vedere se arriva un secondo click nella finestra di validità, o controllare se il bottone continua
+ad assere premuto per resettare il contatore.
+
+Una cosa simile al debounce avviene nel caso dei sensori infrarossi e delle monete. Infatti, cadendo una moneta può
+ruotare attorno al suo asse, attivando due volte il sensore mentre cade. È stato quindi necessario trovare
+sperimentalmente un valore abbastanza lungo da non creare problemi di doppio conteggio ma abbastanza breve da contare
+due monete fatte cadere in successione.
+
+\vspace{1em}
+
+Possiamo vedere lo slider con i cassettini completato in figura \ref{fig:progetto_finito}
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.8\linewidth]{./images/slider_cassetti_finito.png}
-  \caption{}
-  \label{fig:slider_cassetti_finito}
+  \includegraphics[width=0.8\linewidth]{./images/progetto_finito.png}
+  \caption{Progetto finito}
+  \label{fig:progetto_finito}
 \end{figure}
 
 \end{document}
