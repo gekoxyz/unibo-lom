@@ -254,6 +254,14 @@ i sensori (di modo da poter togliere i cassettini) e permette di selezionare una
 singolo click e rimuoverla con un altro click. In qualsiasi momento si può tornare alla visualizzazione delle monete
 sbloccando i sensori con un doppio click.
 
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{./images/interfaccia.jpeg}
+  \caption{Interfaccia utente}
+  \label{fig:interfaccia_utente}
+\end{figure}
+
+
 In ogni momento il dispositivo può essere spento senza perdere il conto della quantità di monete nei cassettini, dato che
 viene salvato il numero di ciascun tipo di moneta nella EEPROM dell'Arduino Nano.
 
@@ -264,7 +272,7 @@ di monete nel dispositivo.
 
 \vspace{1em}
 
-Nel software viene usata una \verb|strcut Coin| per gestire i dati. La struttura è formata in questo modo:
+Nel software viene usata una \verb|struct Coin| per gestire i dati. La struttura è formata in questo modo:
 
 \begin{lstlisting}[language=C]
 struct Coin {

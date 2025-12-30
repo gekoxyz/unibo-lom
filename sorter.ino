@@ -311,14 +311,12 @@ void updateDisplay() {
         cursor_y_coord += 10;
         tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
         tft.print("Stai rimuovendo: ");
+        tft.print(coins_to_remove);
 
         // remove ghost text
         cursor_y_coord += 10;
         tft.setCursor(DISPLAY_X_OFFSET, cursor_y_coord);
         tft.print("                 ");
-
-        tft.print(coins_to_remove);
-
       } else {
         // sensors locked not in submenu -> selecting coin to remove
         for (int i = 0; i < NUM_COIN_TYPES; i++) {
